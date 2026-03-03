@@ -11,13 +11,26 @@
             align-items: center;
             min-height: 100vh;
             margin: 0;
-            background-color: #2b2b2b;
+            background: radial-gradient(ellipse at bottom, #1b2735 0%, #090a0f 100%);
             font-family: Arial, sans-serif;
+            overflow: hidden;
+        }
+
+        canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            z-index: 0;
+        }
+
+        h1 {
+            position: relative;
+            z-index: 1;
         }
 
         h1 {
             font-size: 3rem;
-            color: #f0f0f0;
+            color: #ffffff;
             text-shadow:
                 1px 1px 0 #aaa,
                 2px 2px 0 #999,
@@ -30,6 +43,42 @@
     </style>
 </head>
 <body>
+    <canvas id="stars"></canvas>
     <h1>Hello World!</h1>
+    <script>
+        const canvas = document.getElementById('stars');
+        const ctx = canvas.getContext('2d');
+
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        const stars = Array.from({ length: 200 }, () => ({
+            x: Math.random() * canvas.width,
+            y: Math.random() * canvas.height,
+            r: Math.random() * 1.5 + 0.3,
+            alpha: Math.random(),
+            speed: Math.random() * 0.005 + 0.002
+        }));
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            stars.forEach(star => {
+                star.alpha += star.speed;
+                if (star.alpha > 1 || star.alpha < 0) star.speed *= -1;
+                ctx.beginPath();
+                ctx.arc(star.x, star.y, star.r, 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(255, 255, 255, ${star.alpha})`;
+                ctx.fill();
+            });
+            requestAnimationFrame(draw);
+        }
+
+        draw();
+
+        window.addEventListener('resize', () => {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        });
+    </script>
 </body>
 </html>

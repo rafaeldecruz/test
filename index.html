@@ -57,7 +57,9 @@
             y: Math.random() * canvas.height,
             r: Math.random() * 1.5 + 0.3,
             alpha: Math.random(),
-            speed: Math.random() * 0.03 + 0.01
+            speed: Math.random() * 0.03 + 0.01,
+            vx: (Math.random() - 0.5) * 0.4,
+            vy: Math.random() * 0.3 + 0.1
         }));
 
         function draw() {
@@ -65,6 +67,14 @@
             stars.forEach(star => {
                 star.alpha += star.speed;
                 if (star.alpha > 1 || star.alpha < 0) star.speed *= -1;
+
+                star.x += star.vx;
+                star.y += star.vy;
+
+                if (star.y > canvas.height) { star.y = 0; star.x = Math.random() * canvas.width; }
+                if (star.x < 0) star.x = canvas.width;
+                if (star.x > canvas.width) star.x = 0;
+
                 ctx.beginPath();
                 ctx.arc(star.x, star.y, star.r, 0, Math.PI * 2);
                 ctx.fillStyle = `rgba(255, 255, 255, ${star.alpha})`;

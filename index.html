@@ -26,6 +26,12 @@
         h1 {
             position: relative;
             z-index: 1;
+            transition: transform 0.1s ease-out;
+            transform-style: preserve-3d;
+        }
+
+        body {
+            perspective: 800px;
         }
 
         h1 {
@@ -100,6 +106,31 @@
         }
 
         draw();
+
+        const h1 = document.querySelector('h1');
+
+        function applyTilt(beta, gamma) {
+            const rotX = Math.max(-30, Math.min(30, beta * 0.5));
+            const rotY = Math.max(-30, Math.min(30, gamma * 0.5));
+            h1.style.transform = `rotateX(${-rotX}deg) rotateY(${rotY}deg)`;
+        }
+
+        function startOrientation() {
+            window.addEventListener('deviceorientation', e => {
+                applyTilt(e.beta, e.gamma);
+            });
+        }
+
+        if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+            // iOS 13+
+            document.addEventListener('click', () => {
+                DeviceOrientationEvent.requestPermission().then(state => {
+                    if (state === 'granted') startOrientation();
+                });
+            }, { once: true });
+        } else {
+            startOrientation();
+        }
 
         window.addEventListener('resize', () => {
             canvas.width = window.innerWidth;

@@ -6,6 +6,8 @@
     <meta name="theme-color" content="#090a0f">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Beer Invaders">
+    <link rel="manifest" href="manifest.json">
     <title>Beer Invaders</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -32,12 +34,39 @@ window.addEventListener('resize', resize);
 function W() { return canvas.width; }
 function H() { return canvas.height; }
 
-// Safe area for iPhone notch/dynamic island
 function safeTop() {
     return Math.max(document.getElementById('safe-top').getBoundingClientRect().height, 0);
 }
 
-// ── state: 'title' | 'playing' | 'dead' | 'won' ─────────────────────────────
+// ── icon generation (apple-touch-icon) ───────────────────────────────────────
+function buildIcon() {
+    const ic = document.createElement('canvas');
+    ic.width = ic.height = 180;
+    const cx = ic.getContext('2d');
+    const s = 38, x = 90, y = 108;
+
+    cx.fillStyle = '#090a0f';
+    cx.fillRect(0, 0, 180, 180);
+
+    cx.save(); cx.translate(x, y);
+    cx.fillStyle = '#e0b824';
+    cx.beginPath(); cx.roundRect(-s * 0.6, -s * 0.5, s * 1.2, s * 1.8, s * 0.25); cx.fill();
+    cx.fillStyle = 'rgba(255,255,255,0.22)';
+    cx.fillRect(-s * 0.38, s * 0.1, s * 0.76, s * 0.68);
+    cx.fillStyle = '#7a5a0f';
+    cx.fillRect(-s * 0.25, -s * 1.08, s * 0.5, s * 0.62);
+    cx.fillStyle = '#cc2200';
+    cx.beginPath(); cx.arc(0, -s * 1.08, s * 0.28, 0, Math.PI * 2); cx.fill();
+    cx.restore();
+
+    const link = document.createElement('link');
+    link.rel = 'apple-touch-icon';
+    link.href = ic.toDataURL('image/png');
+    document.head.appendChild(link);
+}
+buildIcon();
+
+// ── state ────────────────────────────────────────────────────────────────────
 let state = 'title';
 
 // ── game vars ────────────────────────────────────────────────────────────────
@@ -46,7 +75,7 @@ let player, bullets, eBullets, enemies, explosions;
 let score, lives, dir, speed, eTimer, frame, cooldown;
 
 function startGame() {
-    player     = { x: W() / 2, y: H() - 90, spd: 5 };
+    player     = { x: W() / 2, y: H() - 195, spd: 5 };
     bullets    = []; eBullets = []; frame = 0; cooldown = 0;
     explosions = [];
     score = 0; lives = 3; dir = 1; speed = 0.27; eTimer = 0;
@@ -64,20 +93,21 @@ function spawnEnemies() {
 }
 
 // ── input ────────────────────────────────────────────────────────────────────
-const held = { left: false, right: false };
+const held = { left: false, right: false, fire: false };
 const keys = {};
 
 document.addEventListener('keydown', e => { keys[e.key] = true; });
 document.addEventListener('keyup',   e => { keys[e.key] = false; });
 
-const touches = new Map(); // pointerId -> side
+const touches = new Map();
 
 canvas.addEventListener('pointerdown', e => {
     e.preventDefault();
     if (state === 'title') { startGame(); return; }
     if (state === 'dead' || state === 'won') { state = 'title'; return; }
-    const side = getSide(e.clientX);
+    const side = getSide(e.clientX, e.clientY);
     touches.set(e.pointerId, side);
+    if (side === 'fire') { cooldown = 0; } // instant shot on tap
     held[side] = true;
 }, { passive: false });
 
@@ -92,11 +122,14 @@ canvas.addEventListener('pointercancel', e => {
     touches.delete(e.pointerId); recalcHeld();
 }, { passive: false });
 
-function getSide(x) {
-    return x < W() / 2 ? 'left' : 'right';
+function getSide(x, y) {
+    const w = W(), h = H();
+    // fire zone: center column, upper portion of control area
+    if (x > w * 0.3 && x < w * 0.7 && y > h * 0.65) return 'fire';
+    return x < w / 2 ? 'left' : 'right';
 }
 function recalcHeld() {
-    held.left = false; held.right = false;
+    held.left = false; held.right = false; held.fire = false;
     for (const side of touches.values()) held[side] = true;
 }
 
@@ -126,26 +159,22 @@ function update() {
     if (moveL && player.x > 22)       player.x -= player.spd;
     if (moveR && player.x < W() - 22) player.x += player.spd;
 
-    // Auto-fire
+    // Auto-fire always
     if (cooldown > 0) cooldown--;
     if (cooldown === 0) {
         bullets.push({ x: player.x, y: player.y - 28 });
         cooldown = 10;
     }
 
-    // Player bullets
     bullets.forEach(b => b.y -= 11);
     bullets = bullets.filter(b => b.y > 0);
 
-    // Enemy bullets
     eBullets.forEach(b => b.y += b.vy);
     eBullets = eBullets.filter(b => b.y < H());
 
-    // Explosions
     explosions.forEach(p => { p.x += p.vx; p.y += p.vy; p.life -= 0.045; });
     explosions = explosions.filter(p => p.life > 0);
 
-    // Move enemies
     const alive = enemies.filter(e => e.alive);
     if (!alive.length) { state = 'won'; return; }
 
@@ -160,7 +189,6 @@ function update() {
         speed += 0.02;
     }
 
-    // Enemy shoot
     eTimer++;
     if (eTimer >= Math.max(80, 240 - alive.length * 4)) {
         eTimer = 0;
@@ -168,7 +196,6 @@ function update() {
         eBullets.push({ x: s.x, y: s.y + 20, vy: 1.5 });
     }
 
-    // Bullet hits enemies
     bullets.forEach(b => {
         enemies.forEach(e => {
             if (e.alive && Math.abs(b.x - e.x) < 22 && Math.abs(b.y - e.y) < 24) {
@@ -178,7 +205,6 @@ function update() {
         });
     });
 
-    // Enemy bullet hits player
     eBullets.forEach(b => {
         if (Math.abs(b.x - player.x) < 16 && Math.abs(b.y - player.y) < 16) {
             lives--; b.y = H() + 1; player.x = W() / 2;
@@ -187,7 +213,6 @@ function update() {
         }
     });
 
-    // Enemies reach player
     if (alive.some(e => e.y > player.y - 28)) state = 'dead';
 }
 
@@ -225,15 +250,14 @@ function drawShip(x, y) {
     ctx.restore();
 }
 
-function drawRoundBtn(x, y, label) {
-    const r = 30;
-    ctx.fillStyle = 'rgba(255,255,255,0.07)';
+function drawRoundBtn(x, y, r, label, color) {
+    ctx.fillStyle = color || 'rgba(255,255,255,0.07)';
     ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = 'rgba(255,255,255,0.18)'; ctx.lineWidth = 1.5;
+    ctx.strokeStyle = 'rgba(255,255,255,0.2)'; ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.stroke();
-    ctx.fillStyle = 'rgba(255,255,255,0.35)';
-    ctx.font = 'bold 20px Arial'; ctx.textAlign = 'center';
-    ctx.fillText(label, x, y + 7);
+    ctx.fillStyle = 'rgba(255,255,255,0.4)';
+    ctx.font = `bold ${Math.round(r * 0.7)}px Arial`; ctx.textAlign = 'center';
+    ctx.fillText(label, x, y + Math.round(r * 0.26));
 }
 
 // ── draw ─────────────────────────────────────────────────────────────────────
@@ -243,7 +267,6 @@ function draw() {
     ctx.fillStyle = '#090a0f';
     ctx.fillRect(0, 0, w, h);
 
-    // Stars
     STARS.forEach(s => {
         ctx.fillStyle = `rgba(255,255,255,${s.a})`;
         ctx.beginPath(); ctx.arc(s.fx * w, s.fy * h, s.r, 0, Math.PI * 2); ctx.fill();
@@ -251,26 +274,25 @@ function draw() {
 
     // ── Title ──
     if (state === 'title') {
-        const cy = h * 0.36;
+        const cy = h * 0.32;
         ctx.textAlign = 'center';
         ctx.fillStyle = '#ffdd00';
         ctx.font = `bold ${Math.min(w * 0.12, 52)}px Arial`;
         ctx.fillText('BEER', w / 2, cy);
         ctx.fillText('INVADERS', w / 2, cy + Math.min(w * 0.14, 62));
 
-        // Bottles below the title
-        const by = cy + Math.min(w * 0.14, 62) + 60;
+        const by = cy + Math.min(w * 0.14, 62) + 68;
         drawBottle(w / 2 - 60, by, 0);
         drawBottle(w / 2,      by, 1);
         drawBottle(w / 2 + 60, by, 0);
 
         ctx.fillStyle = '#ffffff';
         ctx.font = `${Math.min(w * 0.055, 22)}px Arial`;
-        ctx.fillText('Нажми чтобы начать', w / 2, by + 70);
+        ctx.fillText('Нажми чтобы начать', w / 2, by + 72);
 
         ctx.fillStyle = '#555';
         ctx.font = `${Math.min(w * 0.04, 16)}px Arial`;
-        ctx.fillText('< удерживай  |  удерживай >', w / 2, h * 0.9);
+        ctx.fillText('< удерживай  |  удерживай >', w / 2, h * 0.91);
         return;
     }
 
@@ -298,7 +320,6 @@ function draw() {
     ctx.fillStyle = '#ff5500';
     eBullets.forEach(b => ctx.fillRect(b.x - 2, b.y, 4, 12));
 
-    // Explosions
     explosions.forEach(p => {
         ctx.fillStyle = `rgba(255,${Math.floor(p.life * 180)},0,${p.life.toFixed(2)})`;
         ctx.beginPath();
@@ -306,7 +327,7 @@ function draw() {
         ctx.fill();
     });
 
-    // HUD — placed below safe area
+    // HUD
     const hudY = st + 50;
     ctx.font = 'bold 18px Arial'; ctx.fillStyle = 'white';
     ctx.textAlign = 'left';   ctx.fillText(`Score: ${score}`, 18, hudY);
@@ -315,10 +336,12 @@ function draw() {
     ctx.textAlign = 'right';  ctx.fillStyle = '#ff4466'; ctx.font = 'bold 18px Arial';
     ctx.fillText('♥'.repeat(lives), w - 18, hudY);
 
-    // Round movement buttons — side by side at bottom center
-    const btnY = h - 52;
-    drawRoundBtn(w / 2 - 52, btnY, '<');
-    drawRoundBtn(w / 2 + 52, btnY, '>');
+    // Controls: movement arrows at the sides, fire button in center higher up
+    const fireY = h - 118;
+    const movY  = h - 52;
+    drawRoundBtn(w * 0.12, movY,  30, '<');
+    drawRoundBtn(w * 0.88, movY,  30, '>');
+    drawRoundBtn(w * 0.5,  fireY, 34, '^', 'rgba(255,120,0,0.13)');
 }
 
 // ── loop ──────────────────────────────────────────────────────────────────────

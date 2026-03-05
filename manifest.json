@@ -1,0 +1,9 @@
+{
+  "name": "Beer Invaders",
+  "short_name": "Beer Invaders",
+  "start_url": "./index.html",
+  "display": "fullscreen",
+  "orientation": "portrait",
+  "background_color": "#090a0f",
+  "theme_color": "#090a0f"
+}

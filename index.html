@@ -23,62 +23,70 @@
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
 
-// ── resize ──────────────────────────────────────────────────────────────────
-function resize() {
-    canvas.width  = window.innerWidth;
-    canvas.height = window.innerHeight;
-}
+// ── resize ───────────────────────────────────────────────────────────────────
+function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
 resize();
 window.addEventListener('resize', resize);
-
 function W() { return canvas.width; }
 function H() { return canvas.height; }
+function safeTop() { return Math.max(document.getElementById('safe-top').getBoundingClientRect().height, 0); }
 
-function safeTop() {
-    return Math.max(document.getElementById('safe-top').getBoundingClientRect().height, 0);
-}
-
-// ── icon generation (apple-touch-icon) ───────────────────────────────────────
+// ── icon ─────────────────────────────────────────────────────────────────────
 function buildIcon() {
-    const ic = document.createElement('canvas');
-    ic.width = ic.height = 180;
-    const cx = ic.getContext('2d');
-    const s = 38, x = 90, y = 108;
-
-    cx.fillStyle = '#090a0f';
-    cx.fillRect(0, 0, 180, 180);
-
+    const ic = document.createElement('canvas'); ic.width = ic.height = 180;
+    const cx = ic.getContext('2d'); const s = 38, x = 90, y = 108;
+    cx.fillStyle = '#090a0f'; cx.fillRect(0, 0, 180, 180);
     cx.save(); cx.translate(x, y);
-    cx.fillStyle = '#e0b824';
-    cx.beginPath(); cx.roundRect(-s * 0.6, -s * 0.5, s * 1.2, s * 1.8, s * 0.25); cx.fill();
-    cx.fillStyle = 'rgba(255,255,255,0.22)';
-    cx.fillRect(-s * 0.38, s * 0.1, s * 0.76, s * 0.68);
-    cx.fillStyle = '#7a5a0f';
-    cx.fillRect(-s * 0.25, -s * 1.08, s * 0.5, s * 0.62);
-    cx.fillStyle = '#cc2200';
-    cx.beginPath(); cx.arc(0, -s * 1.08, s * 0.28, 0, Math.PI * 2); cx.fill();
+    cx.fillStyle = '#e0b824'; cx.beginPath(); cx.roundRect(-s*.6,-s*.5,s*1.2,s*1.8,s*.25); cx.fill();
+    cx.fillStyle = 'rgba(255,255,255,0.22)'; cx.fillRect(-s*.38,s*.1,s*.76,s*.68);
+    cx.fillStyle = '#7a5a0f'; cx.fillRect(-s*.25,-s*1.08,s*.5,s*.62);
+    cx.fillStyle = '#cc2200'; cx.beginPath(); cx.arc(0,-s*1.08,s*.28,0,Math.PI*2); cx.fill();
     cx.restore();
-
-    const link = document.createElement('link');
-    link.rel = 'apple-touch-icon';
-    link.href = ic.toDataURL('image/png');
-    document.head.appendChild(link);
+    const link = document.createElement('link'); link.rel = 'apple-touch-icon';
+    link.href = ic.toDataURL('image/png'); document.head.appendChild(link);
 }
 buildIcon();
 
-// ── state ────────────────────────────────────────────────────────────────────
-let state = 'title';
+// ── level configs ─────────────────────────────────────────────────────────────
+const LEVELS = [
+    { speed: 0.27, eBulletVy: 1.5, eTimerBase: 240 },
+    { speed: 0.38, eBulletVy: 2.1, eTimerBase: 200 },
+    { speed: 0.50, eBulletVy: 2.7, eTimerBase: 165 },
+    { speed: 0.63, eBulletVy: 3.3, eTimerBase: 130 },
+    { speed: 0.80, eBulletVy: 4.0, eTimerBase: 100 },
+];
 
-// ── game vars ────────────────────────────────────────────────────────────────
+// ── state ────────────────────────────────────────────────────────────────────
+// states: 'title' | 'stage' | 'playing' | 'levelclear' | 'dead' | 'won'
+let state = 'title';
+let currentLevel = 0; // 0..4
+let totalScore   = 0;
+
+// ── game vars ─────────────────────────────────────────────────────────────────
 const COLS = 8, ROWS = 4;
 let player, bullets, eBullets, enemies, explosions;
-let score, lives, dir, speed, eTimer, frame, cooldown;
+let score, lives, dir, speed, eBulletVy, eTimerBase, eTimer, frame, cooldown;
+let levelScore = 0; // score earned this level
 
-function startGame() {
+// stage-screen vars
+let stageTimer  = 0; // counts up in frames
+const STAGE_DUR = 180; // 3 seconds @ 60fps
+
+function goToStage() {
+    stageTimer = 0;
+    state = 'stage';
+}
+
+function startLevel() {
+    const cfg  = LEVELS[currentLevel];
     player     = { x: W() / 2, y: H() - 195, spd: 5 };
     bullets    = []; eBullets = []; frame = 0; cooldown = 0;
     explosions = [];
-    score = 0; lives = 3; dir = 1; speed = 0.27; eTimer = 0;
+    score      = 0; lives = 3; dir = 1;
+    speed      = cfg.speed;
+    eBulletVy  = cfg.eBulletVy;
+    eTimerBase = cfg.eTimerBase;
+    eTimer     = 0;
     spawnEnemies();
     state = 'playing';
 }
@@ -103,11 +111,14 @@ const touches = new Map();
 
 canvas.addEventListener('pointerdown', e => {
     e.preventDefault();
-    if (state === 'title') { startGame(); return; }
-    if (state === 'dead' || state === 'won') { state = 'title'; return; }
+    if (state === 'title')      { totalScore = 0; currentLevel = 0; goToStage(); return; }
+    if (state === 'stage')      { return; } // wait for timer
+    if (state === 'dead')       { state = 'title'; return; }
+    if (state === 'won')        { state = 'title'; return; }
+    if (state === 'levelclear') { advanceLevel(); return; }
     const side = getSide(e.clientX, e.clientY);
     touches.set(e.pointerId, side);
-    if (side === 'fire') { cooldown = 0; } // instant shot on tap
+    if (side === 'fire') cooldown = 0;
     held[side] = true;
 }, { passive: false });
 
@@ -118,13 +129,11 @@ canvas.addEventListener('pointerup', e => {
 }, { passive: false });
 
 canvas.addEventListener('pointercancel', e => {
-    e.preventDefault();
-    touches.delete(e.pointerId); recalcHeld();
+    e.preventDefault(); touches.delete(e.pointerId); recalcHeld();
 }, { passive: false });
 
 function getSide(x, y) {
     const w = W(), h = H();
-    // fire zone: center column, upper portion of control area
     if (x > w * 0.3 && x < w * 0.7 && y > h * 0.65) return 'fire';
     return x < w / 2 ? 'left' : 'right';
 }
@@ -133,51 +142,56 @@ function recalcHeld() {
     for (const side of touches.values()) held[side] = true;
 }
 
+function advanceLevel() {
+    totalScore += score;
+    if (currentLevel >= LEVELS.length - 1) {
+        state = 'won';
+    } else {
+        currentLevel++;
+        goToStage();
+    }
+}
+
 // ── explosion helper ──────────────────────────────────────────────────────────
 function spawnExplosion(x, y) {
     for (let i = 0; i < 12; i++) {
         const angle = Math.random() * Math.PI * 2;
         const spd   = Math.random() * 3 + 1;
-        explosions.push({
-            x, y,
-            vx: Math.cos(angle) * spd,
-            vy: Math.sin(angle) * spd,
-            life: 1.0,
-            r: Math.random() * 3 + 2
-        });
+        explosions.push({ x, y, vx: Math.cos(angle)*spd, vy: Math.sin(angle)*spd, life: 1.0, r: Math.random()*3+2 });
     }
 }
 
 // ── update ───────────────────────────────────────────────────────────────────
 function update() {
-    if (state === 'title') { updateWarp(); return; }
+    if (state === 'title' || state === 'dead' || state === 'won' || state === 'levelclear') {
+        updateWarp(); return;
+    }
+    if (state === 'stage') {
+        updateWarp();
+        stageTimer++;
+        if (stageTimer >= STAGE_DUR) startLevel();
+        return;
+    }
     if (state !== 'playing') return;
     frame++;
 
     const moveL = held.left  || keys['ArrowLeft']  || keys['a'];
     const moveR = held.right || keys['ArrowRight'] || keys['d'];
-
     if (moveL && player.x > 22)       player.x -= player.spd;
     if (moveR && player.x < W() - 22) player.x += player.spd;
 
-    // Auto-fire always
     if (cooldown > 0) cooldown--;
-    if (cooldown === 0) {
-        bullets.push({ x: player.x, y: player.y - 28 });
-        cooldown = 10;
-    }
+    if (cooldown === 0) { bullets.push({ x: player.x, y: player.y - 28 }); cooldown = 10; }
 
     bullets.forEach(b => b.y -= 11);
     bullets = bullets.filter(b => b.y > 0);
-
     eBullets.forEach(b => b.y += b.vy);
     eBullets = eBullets.filter(b => b.y < H());
-
     explosions.forEach(p => { p.x += p.vx; p.y += p.vy; p.life -= 0.045; });
     explosions = explosions.filter(p => p.life > 0);
 
     const alive = enemies.filter(e => e.alive);
-    if (!alive.length) { state = 'won'; return; }
+    if (!alive.length) { levelScore = score; state = 'levelclear'; return; }
 
     enemies.forEach(e => { if (e.alive) e.x += dir * speed; });
     if (frame % 22 === 0) enemies.forEach(e => { if (e.alive) e.f++; });
@@ -191,15 +205,15 @@ function update() {
     }
 
     eTimer++;
-    if (eTimer >= Math.max(80, 240 - alive.length * 4)) {
+    if (eTimer >= Math.max(60, eTimerBase - alive.length * 4)) {
         eTimer = 0;
         const s = alive[Math.floor(Math.random() * alive.length)];
-        eBullets.push({ x: s.x, y: s.y + 20, vy: 1.5 });
+        eBullets.push({ x: s.x, y: s.y + 20, vy: eBulletVy });
     }
 
     bullets.forEach(b => {
         enemies.forEach(e => {
-            if (e.alive && Math.abs(b.x - e.x) < 22 && Math.abs(b.y - e.y) < 24) {
+            if (e.alive && Math.abs(b.x-e.x) < 22 && Math.abs(b.y-e.y) < 24) {
                 e.alive = false; b.y = -1; score += 10;
                 spawnExplosion(e.x, e.y);
             }
@@ -207,7 +221,7 @@ function update() {
     });
 
     eBullets.forEach(b => {
-        if (Math.abs(b.x - player.x) < 16 && Math.abs(b.y - player.y) < 16) {
+        if (Math.abs(b.x-player.x) < 16 && Math.abs(b.y-player.y) < 16) {
             lives--; b.y = H() + 1; player.x = W() / 2;
             spawnExplosion(player.x, player.y);
             if (lives <= 0) state = 'dead';
@@ -217,68 +231,49 @@ function update() {
     if (alive.some(e => e.y > player.y - 28)) state = 'dead';
 }
 
-// ── stars (static, for gameplay) ─────────────────────────────────────────────
+// ── stars ─────────────────────────────────────────────────────────────────────
 const STARS = Array.from({ length: 130 }, () => ({
-    fx: Math.random(), fy: Math.random(),
-    r: Math.random() * 1.5 + 0.3,
-    a: Math.random() * 0.8 + 0.2
+    fx: Math.random(), fy: Math.random(), r: Math.random()*1.5+0.3, a: Math.random()*0.8+0.2
 }));
 
-// ── warp stars (tunnel effect, for title) ────────────────────────────────────
+// ── warp stars (tunnel) ───────────────────────────────────────────────────────
 const WARP_COUNT = 180;
 function makeWarpStar() {
     const angle = Math.random() * Math.PI * 2;
-    const dist  = Math.random() * 0.9 + 0.05; // normalized 0..1
-    return { angle, dist, z: Math.random(), speed: Math.random() * 0.004 + 0.003 };
+    return { angle, dist: Math.random()*0.9+0.05, z: Math.random(), speed: Math.random()*0.004+0.003 };
 }
 const WARP = Array.from({ length: WARP_COUNT }, makeWarpStar);
 
 function updateWarp() {
     for (let s of WARP) {
         s.z -= s.speed;
-        if (s.z <= 0) {
-            const ns = makeWarpStar();
-            ns.z = 1.0;
-            Object.assign(s, ns);
-        }
+        if (s.z <= 0) { const ns = makeWarpStar(); ns.z = 1.0; Object.assign(s, ns); }
     }
 }
 
 function drawWarp(w, h) {
-    const cx = w / 2, cy = h / 2;
-    const maxR = Math.sqrt(cx * cx + cy * cy);
+    const cx = w/2, cy = h/2, maxR = Math.sqrt(cx*cx+cy*cy);
     for (let s of WARP) {
-        const r   = s.dist * maxR;
-        const inv = 1 - s.z;           // 0=far, 1=close
-        const px  = cx + Math.cos(s.angle) * r * inv;
-        const py  = cy + Math.sin(s.angle) * r * inv;
-        const size = Math.max(0.5, inv * 3.5);
-        const alpha = Math.min(1, inv * 1.4);
-        // streak: draw line from previous position
+        const r = s.dist * maxR, inv = 1 - s.z;
+        const px = cx + Math.cos(s.angle)*r*inv, py = cy + Math.sin(s.angle)*r*inv;
         const prevInv = Math.max(0, inv - 0.06);
-        const px0 = cx + Math.cos(s.angle) * r * prevInv;
-        const py0 = cy + Math.sin(s.angle) * r * prevInv;
-        ctx.strokeStyle = `rgba(180,220,255,${(alpha * 0.85).toFixed(2)})`;
-        ctx.lineWidth   = size;
-        ctx.beginPath();
-        ctx.moveTo(px0, py0);
-        ctx.lineTo(px,  py);
-        ctx.stroke();
+        const px0 = cx + Math.cos(s.angle)*r*prevInv, py0 = cy + Math.sin(s.angle)*r*prevInv;
+        const alpha = Math.min(1, inv*1.4);
+        ctx.strokeStyle = `rgba(180,220,255,${(alpha*0.85).toFixed(2)})`;
+        ctx.lineWidth   = Math.max(0.5, inv*3.5);
+        ctx.beginPath(); ctx.moveTo(px0,py0); ctx.lineTo(px,py); ctx.stroke();
     }
 }
 
-// ── draw helpers ─────────────────────────────────────────────────────────────
+// ── draw helpers ──────────────────────────────────────────────────────────────
 function drawBottle(x, y, f) {
     const s = 15;
     ctx.save(); ctx.translate(x, y);
-    ctx.fillStyle = f % 2 === 0 ? '#c8a020' : '#e0b824';
-    ctx.beginPath(); ctx.roundRect(-s * 0.6, -s * 0.5, s * 1.2, s * 1.8, s * 0.25); ctx.fill();
-    ctx.fillStyle = 'rgba(255,255,255,0.2)';
-    ctx.fillRect(-s * 0.38, s * 0.1, s * 0.76, s * 0.68);
-    ctx.fillStyle = '#7a5a0f';
-    ctx.fillRect(-s * 0.25, -s * 1.08, s * 0.5, s * 0.62);
-    ctx.fillStyle = '#cc2200';
-    ctx.beginPath(); ctx.arc(0, -s * 1.08, s * 0.28, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = f%2===0 ? '#c8a020' : '#e0b824';
+    ctx.beginPath(); ctx.roundRect(-s*.6,-s*.5,s*1.2,s*1.8,s*.25); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.2)'; ctx.fillRect(-s*.38,s*.1,s*.76,s*.68);
+    ctx.fillStyle = '#7a5a0f'; ctx.fillRect(-s*.25,-s*1.08,s*.5,s*.62);
+    ctx.fillStyle = '#cc2200'; ctx.beginPath(); ctx.arc(0,-s*1.08,s*.28,0,Math.PI*2); ctx.fill();
     ctx.restore();
 }
 
@@ -286,134 +281,175 @@ function drawShip(x, y) {
     ctx.save(); ctx.translate(x, y);
     ctx.fillStyle = '#00ccff';
     ctx.beginPath();
-    ctx.moveTo(0, -24); ctx.lineTo(20, 12); ctx.lineTo(10, 6);
-    ctx.lineTo(0, 10);  ctx.lineTo(-10, 6); ctx.lineTo(-20, 12);
+    ctx.moveTo(0,-24); ctx.lineTo(20,12); ctx.lineTo(10,6);
+    ctx.lineTo(0,10);  ctx.lineTo(-10,6); ctx.lineTo(-20,12);
     ctx.closePath(); ctx.fill();
     ctx.fillStyle = '#ff7700';
-    ctx.beginPath(); ctx.ellipse(0, 12, 5, 8, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(0,12,5,8,0,0,Math.PI*2); ctx.fill();
     ctx.restore();
 }
 
-function drawRoundBtn(x, y, r, label, color) {
-    ctx.fillStyle = color || 'rgba(255,255,255,0.07)';
-    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+function drawRoundBtn(x, y, r, label) {
+    ctx.fillStyle = 'rgba(255,255,255,0.07)';
+    ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
     ctx.strokeStyle = 'rgba(255,255,255,0.2)'; ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.stroke();
     ctx.fillStyle = 'rgba(255,255,255,0.4)';
-    ctx.font = `bold ${Math.round(r * 0.7)}px Arial`; ctx.textAlign = 'center';
-    ctx.fillText(label, x, y + Math.round(r * 0.26));
+    ctx.font = `bold ${Math.round(r*.7)}px Arial`; ctx.textAlign = 'center';
+    ctx.fillText(label, x, y+Math.round(r*.26));
 }
 
-// ── draw ─────────────────────────────────────────────────────────────────────
-function draw() {
-    const w = W(), h = H();
-    const st = safeTop();
-    ctx.fillStyle = '#090a0f';
-    ctx.fillRect(0, 0, w, h);
+function draw3DText(text, x, y, fontSize) {
+    ctx.font = `bold ${fontSize}px Arial`;
+    const depth = Math.round(fontSize * 0.22);
+    for (let i = depth; i >= 1; i--) {
+        const t = i / depth;
+        ctx.fillStyle = `rgb(${Math.round(120*t)},${Math.round(80*t)},0)`;
+        ctx.fillText(text, x+i, y+i);
+    }
+    ctx.fillStyle = '#ffdd00'; ctx.fillText(text, x, y);
+    ctx.fillStyle = 'rgba(255,255,255,0.28)'; ctx.fillText(text, x, y);
+}
 
-    if (state === 'title') {
+// ── draw ──────────────────────────────────────────────────────────────────────
+function draw() {
+    const w = W(), h = H(), st = safeTop();
+    ctx.fillStyle = '#090a0f'; ctx.fillRect(0,0,w,h);
+
+    const isWarpBg = (state !== 'playing');
+    if (isWarpBg) {
         drawWarp(w, h);
     } else {
         STARS.forEach(s => {
             ctx.fillStyle = `rgba(255,255,255,${s.a})`;
-            ctx.beginPath(); ctx.arc(s.fx * w, s.fy * h, s.r, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.arc(s.fx*w, s.fy*h, s.r, 0, Math.PI*2); ctx.fill();
         });
     }
 
-    // ── Title ──
+    // ── Title ──────────────────────────────────────────────────────────────────
     if (state === 'title') {
         const cy = h * 0.32;
         ctx.textAlign = 'center';
-        const sz1 = Math.min(w * 0.12, 52);
-        const sz2 = Math.min(w * 0.14, 62);
-        const y1  = cy;
-        const y2  = cy + sz2;
-
-        // 3D extrusion: draw shadow layers offset down-right
-        function draw3DText(text, x, y, fontSize) {
-            ctx.font = `bold ${fontSize}px Arial`;
-            const depth = Math.round(fontSize * 0.22);
-            for (let i = depth; i >= 1; i--) {
-                const t = i / depth;
-                ctx.fillStyle = `rgb(${Math.round(120 * t)},${Math.round(80 * t)},0)`;
-                ctx.fillText(text, x + i, y + i);
-            }
-            // top face
-            ctx.fillStyle = '#ffdd00';
-            ctx.fillText(text, x, y);
-            // highlight
-            ctx.fillStyle = 'rgba(255,255,255,0.28)';
-            ctx.fillText(text, x, y);
-        }
-
-        draw3DText('BEER',     w / 2, y1, sz1);
-        draw3DText('INVADERS', w / 2, y2, sz1);
-
-        const by = cy + Math.min(w * 0.14, 62) + 68;
-        drawBottle(w / 2 - 60, by, 0);
-        drawBottle(w / 2,      by, 1);
-        drawBottle(w / 2 + 60, by, 0);
-
-        ctx.fillStyle = '#ffffff';
-        ctx.font = `${Math.min(w * 0.055, 22)}px Arial`;
-        ctx.fillText('Нажми чтобы начать', w / 2, by + 72);
-
-        ctx.fillStyle = '#555';
-        ctx.font = `${Math.min(w * 0.04, 16)}px Arial`;
-        ctx.fillText('< удерживай  |  удерживай >', w / 2, h * 0.91);
+        const sz = Math.min(w*0.12, 52);
+        draw3DText('BEER',     w/2, cy,      sz);
+        draw3DText('INVADERS', w/2, cy+sz+8, sz);
+        const by = cy + sz*2 + 40;
+        drawBottle(w/2-60, by, 0); drawBottle(w/2, by, 1); drawBottle(w/2+60, by, 0);
+        ctx.fillStyle = '#ffffff'; ctx.font = `${Math.min(w*.055,22)}px Arial`;
+        ctx.fillText('Нажми чтобы начать', w/2, by+72);
+        ctx.fillStyle = '#555'; ctx.font = `${Math.min(w*.04,16)}px Arial`;
+        ctx.fillText('< удерживай  |  удерживай >', w/2, h*0.91);
         return;
     }
 
-    // ── Game Over / Won ──
+    // ── Stage announce ─────────────────────────────────────────────────────────
+    if (state === 'stage') {
+        // Blink: visible for 20 frames, hidden for 12 frames → cycle 32
+        const blink = Math.floor(stageTimer / 10) % 3 !== 2;
+        if (blink) {
+            const sz = Math.min(w*0.13, 58);
+            ctx.textAlign = 'center';
+            draw3DText(`STAGE  ${currentLevel + 1}`, w/2, h/2, sz);
+        }
+        // thin progress bar at bottom
+        const prog = stageTimer / STAGE_DUR;
+        ctx.fillStyle = 'rgba(255,220,0,0.35)';
+        ctx.fillRect(0, h-4, w*prog, 4);
+        return;
+    }
+
+    // ── Level Clear ────────────────────────────────────────────────────────────
+    if (state === 'levelclear') {
+        ctx.textAlign = 'center';
+        const sz = Math.min(w*0.10, 44);
+        draw3DText(`STAGE  ${currentLevel+1}  CLEAR!`, w/2, h/2 - sz*1.6, sz);
+
+        // Score panel
+        const px = w/2, py = h/2;
+        const bw = Math.min(w*0.7, 320), bh = 130;
+        ctx.fillStyle = 'rgba(0,0,0,0.55)';
+        ctx.beginPath(); ctx.roundRect(px-bw/2, py-bh/2, bw, bh, 16); ctx.fill();
+        ctx.strokeStyle = 'rgba(255,220,0,0.4)'; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.roundRect(px-bw/2, py-bh/2, bw, bh, 16); ctx.stroke();
+
+        ctx.fillStyle = '#ccc'; ctx.font = `${Math.min(w*.05,20)}px Arial`;
+        ctx.fillText('Этот уровень', px, py - 28);
+        ctx.fillStyle = '#ffdd00'; ctx.font = `bold ${Math.min(w*.085,36)}px Arial`;
+        ctx.fillText(`+${levelScore}`, px, py + 14);
+        ctx.fillStyle = '#aaa'; ctx.font = `${Math.min(w*.042,17)}px Arial`;
+        ctx.fillText(`Всего: ${totalScore + levelScore}`, px, py + 50);
+
+        const isLast = currentLevel >= LEVELS.length - 1;
+        ctx.fillStyle = '#fff'; ctx.font = `${Math.min(w*.05,20)}px Arial`;
+        ctx.fillText(isLast ? 'Нажми — финальный экран' : `Нажми — Stage ${currentLevel+2}`, px, py + 100);
+        return;
+    }
+
+    // ── Dead / Won ─────────────────────────────────────────────────────────────
     if (state === 'dead' || state === 'won') {
         ctx.textAlign = 'center';
-        ctx.font = `bold ${Math.min(w * 0.11, 48)}px Arial`;
-        ctx.fillStyle = state === 'dead' ? '#ff4444' : '#ffcc00';
-        ctx.fillText(state === 'dead' ? 'GAME OVER' : 'YOU WIN!', w / 2, h / 2 - 30);
-        ctx.fillStyle = 'white';
-        ctx.font = `${Math.min(w * 0.065, 28)}px Arial`;
-        ctx.fillText(`Score: ${score}`, w / 2, h / 2 + 24);
-        ctx.fillStyle = '#aaa';
-        ctx.font = `${Math.min(w * 0.047, 20)}px Arial`;
-        ctx.fillText('Нажми чтобы сыграть снова', w / 2, h / 2 + 70);
+        const sz = Math.min(w*0.11, 48);
+        if (state === 'won') {
+            draw3DText('ВЫ ПОБЕДИЛИ!', w/2, h/2 - 60, sz);
+        } else {
+            ctx.font = `bold ${sz}px Arial`; ctx.fillStyle = '#ff4444';
+            ctx.fillText('GAME OVER', w/2, h/2 - 60);
+        }
+
+        // Score panel
+        const px = w/2, py = h/2 + 10;
+        const bw = Math.min(w*0.72, 330), bh = state==='won' ? 150 : 100;
+        ctx.fillStyle = 'rgba(0,0,0,0.55)';
+        ctx.beginPath(); ctx.roundRect(px-bw/2, py-bh/2, bw, bh, 16); ctx.fill();
+        ctx.strokeStyle = 'rgba(255,220,0,0.35)'; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.roundRect(px-bw/2, py-bh/2, bw, bh, 16); ctx.stroke();
+
+        if (state === 'won') {
+            ctx.fillStyle = '#aaa'; ctx.font = `${Math.min(w*.044,18)}px Arial`;
+            ctx.fillText(`Последний уровень: +${levelScore}`, px, py - 36);
+            ctx.fillStyle = '#ffdd00'; ctx.font = `bold ${Math.min(w*.085,36)}px Arial`;
+            ctx.fillText(`Итого: ${totalScore + levelScore}`, px, py + 8);
+            ctx.fillStyle = '#aaa'; ctx.font = `${Math.min(w*.04,16)}px Arial`;
+            ctx.fillText('Все 5 уровней пройдены!', px, py + 44);
+        } else {
+            ctx.fillStyle = '#fff'; ctx.font = `bold ${Math.min(w*.07,30)}px Arial`;
+            ctx.fillText(`Score: ${totalScore + score}`, px, py + 14);
+        }
+
+        ctx.fillStyle = '#888'; ctx.font = `${Math.min(w*.044,18)}px Arial`;
+        ctx.fillText('Нажми чтобы вернуться', px, py + bh/2 + 40);
         return;
     }
 
-    // ── Playing ──
+    // ── Playing ────────────────────────────────────────────────────────────────
     enemies.forEach(e => { if (e.alive) drawBottle(e.x, e.y, e.f); });
     drawShip(player.x, player.y);
 
     ctx.fillStyle = '#00ffff';
-    bullets.forEach(b => ctx.fillRect(b.x - 2, b.y, 4, 14));
+    bullets.forEach(b => ctx.fillRect(b.x-2, b.y, 4, 14));
     ctx.fillStyle = '#ff5500';
-    eBullets.forEach(b => ctx.fillRect(b.x - 2, b.y, 4, 12));
+    eBullets.forEach(b => ctx.fillRect(b.x-2, b.y, 4, 12));
 
     explosions.forEach(p => {
-        ctx.fillStyle = `rgba(255,${Math.floor(p.life * 180)},0,${p.life.toFixed(2)})`;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.r * p.life, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.fillStyle = `rgba(255,${Math.floor(p.life*180)},0,${p.life.toFixed(2)})`;
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.r*p.life, 0, Math.PI*2); ctx.fill();
     });
 
     // HUD
     const hudY = st + 50;
-    ctx.font = 'bold 18px Arial'; ctx.fillStyle = 'white';
-    ctx.textAlign = 'left';   ctx.fillText(`Score: ${score}`, 18, hudY);
-    ctx.textAlign = 'center'; ctx.fillStyle = '#ffdd00'; ctx.font = 'bold 20px Arial';
-    ctx.fillText('BEER INVADERS', w / 2, hudY);
-    ctx.textAlign = 'right';  ctx.fillStyle = '#ff4466'; ctx.font = 'bold 18px Arial';
-    ctx.fillText('♥'.repeat(lives), w - 18, hudY);
+    ctx.font = 'bold 18px Arial'; ctx.textAlign = 'left';
+    ctx.fillStyle = 'white'; ctx.fillText(`${totalScore + score}`, 18, hudY);
+    ctx.textAlign = 'center'; ctx.fillStyle = '#ffdd00'; ctx.font = 'bold 18px Arial';
+    ctx.fillText(`STAGE ${currentLevel+1}`, w/2, hudY);
+    ctx.textAlign = 'right'; ctx.fillStyle = '#ff4466'; ctx.font = 'bold 18px Arial';
+    ctx.fillText('♥'.repeat(lives), w-18, hudY);
 
-    // Controls: movement arrows at the sides, fire button in center higher up
-    const fireY = h - 118;
-    const movY  = h - 52;
-    drawRoundBtn(w * 0.12, movY, 45, '<');
-    drawRoundBtn(w * 0.88, movY, 45, '>');
+    drawRoundBtn(w*0.12, h-52, 45, '<');
+    drawRoundBtn(w*0.88, h-52, 45, '>');
 }
 
 // ── loop ──────────────────────────────────────────────────────────────────────
 function loop() { update(); draw(); requestAnimationFrame(loop); }
-
 requestAnimationFrame(() => { resize(); loop(); });
 </script>
 </body>

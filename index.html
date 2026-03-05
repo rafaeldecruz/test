@@ -6,154 +6,238 @@
     <meta name="theme-color" content="#090a0f">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <title>Hello World</title>
+    <title>Beer Invaders</title>
     <style>
-        html, body {
-            width: 100%;
-            height: 100%;
-            background-color: #090a0f;
-        }
-
-        body {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-            min-height: -webkit-fill-available;
-            margin: 0;
-            background: radial-gradient(ellipse at bottom, #1b2735 0%, #090a0f 100%);
-            font-family: Arial, sans-serif;
-            overflow: hidden;
-            padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
-            box-sizing: border-box;
-        }
-
-        canvas {
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        html, body { width: 100%; height: 100%; background: #090a0f; overflow: hidden; }
+        canvas { position: fixed; top: 0; left: 0; right: 0; bottom: 0; width: 100%; height: 100%; }
+        #touch-left, #touch-right {
             position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            width: 100%;
-            height: 100%;
-            z-index: 0;
+            top: 0; bottom: 0;
+            width: 42%;
+            z-index: 10;
+            -webkit-tap-highlight-color: transparent;
         }
-
-        h1 {
-            position: relative;
-            z-index: 1;
-            transition: transform 0.1s ease-out;
-            transform-style: preserve-3d;
+        #touch-left  { left: 0; }
+        #touch-right { right: 0; }
+        #touch-fire {
+            position: fixed;
+            bottom: calc(env(safe-area-inset-bottom) + 20px);
+            left: 50%; transform: translateX(-50%);
+            width: 80px; height: 80px;
+            background: rgba(255, 100, 0, 0.25);
+            border: 2px solid rgba(255, 150, 0, 0.5);
+            border-radius: 50%;
+            z-index: 11;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 32px;
+            -webkit-tap-highlight-color: transparent;
         }
-
-        body {
-            perspective: 800px;
+        #touch-fire:active { background: rgba(255, 150, 0, 0.45); }
+        #hint-left, #hint-right {
+            position: fixed;
+            bottom: calc(env(safe-area-inset-bottom) + 28px);
+            font-size: 36px;
+            opacity: 0.25;
+            z-index: 9;
+            pointer-events: none;
         }
-
-        h1 {
-            font-size: 3rem;
-            color: #ffffff;
-            text-shadow:
-                1px 1px 0 #aaa,
-                2px 2px 0 #999,
-                3px 3px 0 #888,
-                4px 4px 0 #777,
-                5px 5px 0 #666,
-                6px 6px 12px rgba(0,0,0,0.6);
-            letter-spacing: 2px;
-        }
+        #hint-left  { left: 14%; }
+        #hint-right { right: 14%; }
     </style>
 </head>
 <body>
-    <canvas id="stars"></canvas>
-    <h1>Hello World! v5</h1>
+    <canvas id="game"></canvas>
+
+    <div id="touch-left"></div>
+    <div id="touch-right"></div>
+    <div id="touch-fire">🍺</div>
+    <div id="hint-left">◀</div>
+    <div id="hint-right">▶</div>
+
     <script>
-        const canvas = document.getElementById('stars');
+        const canvas = document.getElementById('game');
         const ctx = canvas.getContext('2d');
 
-        let cx, cy;
+        function resize() { canvas.width = canvas.offsetWidth; canvas.height = canvas.offsetHeight; }
+        resize();
+        window.addEventListener('resize', resize);
 
-        function resizeCanvas() {
-            canvas.width = canvas.offsetWidth;
-            canvas.height = canvas.offsetHeight;
-            cx = canvas.width / 2;
-            cy = canvas.height / 2;
+        const COLS = 8, ROWS = 4;
+        const keys = {};
+        let player, bullets, enemyBullets, enemies;
+        let score, lives, gameOver, won;
+        let enemyDir, enemySpeed, shootTimer, frameCount, shootCooldown, level;
+
+        const stars = Array.from({length: 120}, () => ({
+            x: Math.random(), y: Math.random(),
+            r: Math.random() * 1.5 + 0.3,
+            a: Math.random() * 0.8 + 0.2
+        }));
+
+        function initGame() {
+            player = { x: canvas.width / 2, y: canvas.height - 110, speed: 5 };
+            bullets = []; enemyBullets = [];
+            score = 0; lives = 3; level = 1;
+            gameOver = false; won = false;
+            enemyDir = 1; enemySpeed = 0.7;
+            shootTimer = 0; frameCount = 0; shootCooldown = 0;
+            initEnemies();
         }
 
-        resizeCanvas();
-
-        function newStar() {
-            const angle = Math.random() * Math.PI * 2;
-            const dist = Math.random() * 80;
-            return {
-                x: cx + Math.cos(angle) * dist,
-                y: cy + Math.sin(angle) * dist,
-                px: cx + Math.cos(angle) * dist,
-                py: cy + Math.sin(angle) * dist,
-                speed: Math.random() * 2 + 1,
-                angle
-            };
+        function initEnemies() {
+            enemies = [];
+            const mx = 40;
+            const sx = (canvas.width - mx * 2) / (COLS - 1);
+            const sy = canvas.height * 0.12;
+            for (let r = 0; r < ROWS; r++)
+                for (let c = 0; c < COLS; c++)
+                    enemies.push({ x: mx + c * sx, y: sy + r * 52, alive: true, frame: 0 });
         }
 
-        const stars = Array.from({ length: 300 }, newStar);
+        function drawBottle(x, y, frame) {
+            const s = 16;
+            ctx.save(); ctx.translate(x, y);
+            ctx.fillStyle = frame % 2 === 0 ? '#c8a020' : '#e0b824';
+            ctx.beginPath(); ctx.roundRect(-s * 0.6, -s * 0.5, s * 1.2, s * 1.8, s * 0.25); ctx.fill();
+            ctx.fillStyle = 'rgba(255,255,255,0.2)';
+            ctx.fillRect(-s * 0.4, s * 0.1, s * 0.8, s * 0.7);
+            ctx.fillStyle = '#7a5a0f';
+            ctx.fillRect(-s * 0.25, -s * 1.1, s * 0.5, s * 0.65);
+            ctx.fillStyle = '#cc2200';
+            ctx.beginPath(); ctx.arc(0, -s * 1.1, s * 0.3, 0, Math.PI * 2); ctx.fill();
+            ctx.restore();
+        }
 
-        function draw() {
-            ctx.fillStyle = 'rgba(9, 10, 15, 0.3)';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
+        function drawShip(x, y) {
+            ctx.save(); ctx.translate(x, y);
+            ctx.fillStyle = '#00ccff';
+            ctx.beginPath();
+            ctx.moveTo(0, -22); ctx.lineTo(18, 10); ctx.lineTo(8, 4);
+            ctx.lineTo(0, 8); ctx.lineTo(-8, 4); ctx.lineTo(-18, 10);
+            ctx.closePath(); ctx.fill();
+            ctx.fillStyle = '#ff7700';
+            ctx.beginPath(); ctx.ellipse(0, 10, 4, 7, 0, 0, Math.PI * 2); ctx.fill();
+            ctx.restore();
+        }
 
-            stars.forEach(star => {
-                star.px = star.x;
-                star.py = star.y;
-                star.speed *= 1.04;
-                star.x += Math.cos(star.angle) * star.speed;
-                star.y += Math.sin(star.angle) * star.speed;
+        function update() {
+            frameCount++;
+            if (gameOver || won) return;
 
-                const dist = Math.hypot(star.x - cx, star.y - cy);
-                const alpha = Math.min(dist / 200, 1);
+            if ((keys['ArrowLeft']  || keys['a'] || keys['touchLeft'])  && player.x > 20)                 player.x -= player.speed;
+            if ((keys['ArrowRight'] || keys['d'] || keys['touchRight']) && player.x < canvas.width - 20)  player.x += player.speed;
 
-                ctx.beginPath();
-                ctx.moveTo(star.px, star.py);
-                ctx.lineTo(star.x, star.y);
-                ctx.strokeStyle = `rgba(255, 255, 255, ${alpha})`;
-                ctx.lineWidth = Math.min(star.speed / 10, 2);
-                ctx.stroke();
+            if (shootCooldown > 0) shootCooldown--;
+            if ((keys[' '] || keys['touchFire']) && shootCooldown === 0) {
+                bullets.push({ x: player.x, y: player.y - 24 });
+                shootCooldown = 18;
+            }
 
-                if (star.x < 0 || star.x > canvas.width || star.y < 0 || star.y > canvas.height) {
-                    Object.assign(star, newStar());
+            bullets.forEach(b => b.y -= 10);
+            bullets = bullets.filter(b => b.y > 0);
+
+            enemyBullets.forEach(b => b.y += b.vy);
+            enemyBullets = enemyBullets.filter(b => b.y < canvas.height);
+
+            const alive = enemies.filter(e => e.alive);
+            if (alive.length === 0) { won = true; return; }
+
+            const lx = Math.min(...alive.map(e => e.x));
+            const rx = Math.max(...alive.map(e => e.x));
+            enemies.forEach(e => { if (e.alive) e.x += enemyDir * enemySpeed; });
+            if (frameCount % 20 === 0) enemies.forEach(e => { if (e.alive) e.frame++; });
+
+            if (rx > canvas.width - 30 || lx < 30) {
+                enemyDir *= -1;
+                enemies.forEach(e => { if (e.alive) e.y += 20; });
+                enemySpeed += 0.08;
+            }
+
+            shootTimer++;
+            if (shootTimer >= Math.max(25, 80 - alive.length * 2)) {
+                shootTimer = 0;
+                const s = alive[Math.floor(Math.random() * alive.length)];
+                enemyBullets.push({ x: s.x, y: s.y + 20, vy: 4 });
+            }
+
+            bullets.forEach(b => enemies.forEach(e => {
+                if (e.alive && Math.abs(b.x - e.x) < 20 && Math.abs(b.y - e.y) < 22) {
+                    e.alive = false; b.y = -999; score += 10;
+                }
+            }));
+
+            enemyBullets.forEach(b => {
+                if (Math.abs(b.x - player.x) < 14 && Math.abs(b.y - player.y) < 14) {
+                    lives--; b.y = canvas.height + 100; player.x = canvas.width / 2;
+                    if (lives <= 0) gameOver = true;
                 }
             });
 
-            requestAnimationFrame(draw);
+            if (alive.some(e => e.y > player.y - 30)) gameOver = true;
         }
 
-        draw();
-
-        const h1 = document.querySelector('h1');
-
-        function applyTilt(beta, gamma) {
-            const rotX = Math.max(-30, Math.min(30, beta * 0.5));
-            const rotY = Math.max(-30, Math.min(30, gamma * 0.5));
-            h1.style.transform = `rotateX(${-rotX}deg) rotateY(${rotY}deg)`;
-        }
-
-        function startOrientation() {
-            window.addEventListener('deviceorientation', e => {
-                applyTilt(e.beta, e.gamma);
+        function draw() {
+            ctx.fillStyle = '#090a0f';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            stars.forEach(s => {
+                ctx.fillStyle = `rgba(255,255,255,${s.a})`;
+                ctx.beginPath(); ctx.arc(s.x * canvas.width, s.y * canvas.height, s.r, 0, Math.PI * 2); ctx.fill();
             });
+
+            if (gameOver || won) {
+                ctx.textAlign = 'center';
+                const big = Math.min(canvas.width * 0.1, 46);
+                ctx.font = `bold ${big}px Arial`;
+                ctx.fillStyle = gameOver ? '#ff4444' : '#ffcc00';
+                ctx.fillText(gameOver ? 'GAME OVER' : 'YOU WIN! 🍺', canvas.width / 2, canvas.height / 2 - 30);
+                ctx.fillStyle = 'white';
+                ctx.font = `${Math.min(canvas.width * 0.06, 26)}px Arial`;
+                ctx.fillText(`Score: ${score}`, canvas.width / 2, canvas.height / 2 + 20);
+                ctx.fillStyle = '#aaa';
+                ctx.font = `${Math.min(canvas.width * 0.045, 20)}px Arial`;
+                ctx.fillText('Нажми чтобы сыграть снова', canvas.width / 2, canvas.height / 2 + 60);
+                return;
+            }
+
+            enemies.forEach(e => { if (e.alive) drawBottle(e.x, e.y, e.frame); });
+            drawShip(player.x, player.y);
+
+            ctx.fillStyle = '#00ffff';
+            bullets.forEach(b => ctx.fillRect(b.x - 2, b.y, 4, 14));
+            ctx.fillStyle = '#ff5500';
+            enemyBullets.forEach(b => ctx.fillRect(b.x - 2, b.y, 4, 12));
+
+            const topY = 44;
+            ctx.font = `bold 18px Arial`; ctx.fillStyle = 'white';
+            ctx.textAlign = 'left';  ctx.fillText(`Score: ${score}`, 20, topY);
+            ctx.textAlign = 'center'; ctx.fillStyle = '#ffdd00';
+            ctx.font = 'bold 20px Arial';
+            ctx.fillText('BEER INVADERS', canvas.width / 2, topY);
+            ctx.textAlign = 'right'; ctx.fillStyle = 'white'; ctx.font = 'bold 18px Arial';
+            ctx.fillText('❤️ '.repeat(lives).trim(), canvas.width - 20, topY);
         }
 
-        if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
-            // iOS 13+
-            document.addEventListener('click', () => {
-                DeviceOrientationEvent.requestPermission().then(state => {
-                    if (state === 'granted') startOrientation();
-                });
-            }, { once: true });
-        } else {
-            startOrientation();
-        }
+        function loop() { update(); draw(); requestAnimationFrame(loop); }
 
-        window.addEventListener('resize', resizeCanvas);
+        // Touch zones — hold to move, tap fire button to shoot
+        function zone(el, key) {
+            el.addEventListener('touchstart', e => { e.preventDefault(); keys[key] = true; },  { passive: false });
+            el.addEventListener('touchend',   e => { e.preventDefault(); keys[key] = false; }, { passive: false });
+            el.addEventListener('touchcancel',e => { e.preventDefault(); keys[key] = false; }, { passive: false });
+        }
+        zone(document.getElementById('touch-left'),  'touchLeft');
+        zone(document.getElementById('touch-right'), 'touchRight');
+        zone(document.getElementById('touch-fire'),  'touchFire');
+
+        document.addEventListener('keydown', e => { keys[e.key] = true; });
+        document.addEventListener('keyup',   e => { keys[e.key] = false; });
+
+        canvas.addEventListener('touchend', () => { if (gameOver || won) initGame(); });
+        canvas.addEventListener('click',    () => { if (gameOver || won) initGame(); });
+
+        initGame();
+        loop();
     </script>
 </body>
 </html>

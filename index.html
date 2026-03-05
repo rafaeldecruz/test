@@ -46,7 +46,7 @@ let player, bullets, eBullets, enemies, explosions;
 let score, lives, dir, speed, eTimer, frame, cooldown;
 
 function startGame() {
-    player     = { x: W() / 2, y: H() - 120, spd: 5 };
+    player     = { x: W() / 2, y: H() - 90, spd: 5 };
     bullets    = []; eBullets = []; frame = 0; cooldown = 0;
     explosions = [];
     score = 0; lives = 3; dir = 1; speed = 0.27; eTimer = 0;
@@ -315,10 +315,10 @@ function draw() {
     ctx.textAlign = 'right';  ctx.fillStyle = '#ff4466'; ctx.font = 'bold 18px Arial';
     ctx.fillText('♥'.repeat(lives), w - 18, hudY);
 
-    // Round movement buttons
-    const btnY = h * 0.85;
-    drawRoundBtn(w * 0.15, btnY, '<');
-    drawRoundBtn(w * 0.85, btnY, '>');
+    // Round movement buttons — side by side at bottom center
+    const btnY = h - 52;
+    drawRoundBtn(w / 2 - 52, btnY, '<');
+    drawRoundBtn(w / 2 + 52, btnY, '>');
 }
 
 // ── loop ──────────────────────────────────────────────────────────────────────

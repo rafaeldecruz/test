@@ -362,10 +362,10 @@ function draw() {
     if (state === 'levelclear') {
         ctx.textAlign = 'center';
         const sz = Math.min(w*0.10, 44);
-        draw3DText(`STAGE  ${currentLevel+1}  CLEAR!`, w/2, h/2 - sz*1.6, sz);
+        draw3DText(`STAGE  ${currentLevel+1}  CLEAR!`, w/2, h*0.22, sz);
 
-        // Score panel
-        const px = w/2, py = h/2;
+        // Score panel — centered lower so it doesn't overlap the title
+        const px = w/2, py = h*0.58;
         const bw = Math.min(w*0.7, 320), bh = 130;
         ctx.fillStyle = 'rgba(0,0,0,0.55)';
         ctx.beginPath(); ctx.roundRect(px-bw/2, py-bh/2, bw, bh, 16); ctx.fill();
@@ -381,7 +381,7 @@ function draw() {
 
         const isLast = currentLevel >= LEVELS.length - 1;
         ctx.fillStyle = '#fff'; ctx.font = `${Math.min(w*.05,20)}px Arial`;
-        ctx.fillText(isLast ? 'Нажми — финальный экран' : `Нажми — Stage ${currentLevel+2}`, px, py + 100);
+        ctx.fillText(isLast ? 'Нажми — финальный экран' : 'Следующий уровень', px, py + 100);
         return;
     }
 

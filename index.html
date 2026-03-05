@@ -150,6 +150,7 @@ function spawnExplosion(x, y) {
 
 // ── update ───────────────────────────────────────────────────────────────────
 function update() {
+    if (state === 'title') { updateWarp(); return; }
     if (state !== 'playing') return;
     frame++;
 
@@ -216,12 +217,55 @@ function update() {
     if (alive.some(e => e.y > player.y - 28)) state = 'dead';
 }
 
-// ── stars ────────────────────────────────────────────────────────────────────
+// ── stars (static, for gameplay) ─────────────────────────────────────────────
 const STARS = Array.from({ length: 130 }, () => ({
     fx: Math.random(), fy: Math.random(),
     r: Math.random() * 1.5 + 0.3,
     a: Math.random() * 0.8 + 0.2
 }));
+
+// ── warp stars (tunnel effect, for title) ────────────────────────────────────
+const WARP_COUNT = 180;
+function makeWarpStar() {
+    const angle = Math.random() * Math.PI * 2;
+    const dist  = Math.random() * 0.9 + 0.05; // normalized 0..1
+    return { angle, dist, z: Math.random(), speed: Math.random() * 0.004 + 0.003 };
+}
+const WARP = Array.from({ length: WARP_COUNT }, makeWarpStar);
+
+function updateWarp() {
+    for (let s of WARP) {
+        s.z -= s.speed;
+        if (s.z <= 0) {
+            const ns = makeWarpStar();
+            ns.z = 1.0;
+            Object.assign(s, ns);
+        }
+    }
+}
+
+function drawWarp(w, h) {
+    const cx = w / 2, cy = h / 2;
+    const maxR = Math.sqrt(cx * cx + cy * cy);
+    for (let s of WARP) {
+        const r   = s.dist * maxR;
+        const inv = 1 - s.z;           // 0=far, 1=close
+        const px  = cx + Math.cos(s.angle) * r * inv;
+        const py  = cy + Math.sin(s.angle) * r * inv;
+        const size = Math.max(0.5, inv * 3.5);
+        const alpha = Math.min(1, inv * 1.4);
+        // streak: draw line from previous position
+        const prevInv = Math.max(0, inv - 0.06);
+        const px0 = cx + Math.cos(s.angle) * r * prevInv;
+        const py0 = cy + Math.sin(s.angle) * r * prevInv;
+        ctx.strokeStyle = `rgba(180,220,255,${(alpha * 0.85).toFixed(2)})`;
+        ctx.lineWidth   = size;
+        ctx.beginPath();
+        ctx.moveTo(px0, py0);
+        ctx.lineTo(px,  py);
+        ctx.stroke();
+    }
+}
 
 // ── draw helpers ─────────────────────────────────────────────────────────────
 function drawBottle(x, y, f) {
@@ -267,10 +311,14 @@ function draw() {
     ctx.fillStyle = '#090a0f';
     ctx.fillRect(0, 0, w, h);
 
-    STARS.forEach(s => {
-        ctx.fillStyle = `rgba(255,255,255,${s.a})`;
-        ctx.beginPath(); ctx.arc(s.fx * w, s.fy * h, s.r, 0, Math.PI * 2); ctx.fill();
-    });
+    if (state === 'title') {
+        drawWarp(w, h);
+    } else {
+        STARS.forEach(s => {
+            ctx.fillStyle = `rgba(255,255,255,${s.a})`;
+            ctx.beginPath(); ctx.arc(s.fx * w, s.fy * h, s.r, 0, Math.PI * 2); ctx.fill();
+        });
+    }
 
     // ── Title ──
     if (state === 'title') {

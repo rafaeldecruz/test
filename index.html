@@ -10,12 +10,9 @@
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         html, body { width: 100%; height: 100%; background: #090a0f; overflow: hidden; }
-        canvas { position: fixed; top: 0; left: 0; right: 0; bottom: 0; width: 100%; height: 100%; }
+        canvas { display: block; width: 100%; height: 100%; }
         #touch-left, #touch-right {
-            position: fixed;
-            top: 0; bottom: 0;
-            width: 42%;
-            z-index: 10;
+            position: fixed; top: 0; bottom: 0; width: 42%; z-index: 10;
             -webkit-tap-highlight-color: transparent;
         }
         #touch-left  { left: 0; }
@@ -32,15 +29,13 @@
             display: flex; align-items: center; justify-content: center;
             font-size: 32px;
             -webkit-tap-highlight-color: transparent;
+            touch-action: none;
         }
         #touch-fire:active { background: rgba(255, 150, 0, 0.45); }
         #hint-left, #hint-right {
             position: fixed;
             bottom: calc(env(safe-area-inset-bottom) + 28px);
-            font-size: 36px;
-            opacity: 0.25;
-            z-index: 9;
-            pointer-events: none;
+            font-size: 36px; opacity: 0.25; z-index: 9; pointer-events: none;
         }
         #hint-left  { left: 14%; }
         #hint-right { right: 14%; }
@@ -48,37 +43,38 @@
 </head>
 <body>
     <canvas id="game"></canvas>
-
     <div id="touch-left"></div>
     <div id="touch-right"></div>
     <div id="touch-fire">🍺</div>
     <div id="hint-left">◀</div>
     <div id="hint-right">▶</div>
-
     <script>
         const canvas = document.getElementById('game');
-        const ctx = canvas.getContext('2d');
+        const ctx    = canvas.getContext('2d');
 
-        function resize() { canvas.width = canvas.offsetWidth; canvas.height = canvas.offsetHeight; }
-        resize();
-        window.addEventListener('resize', resize);
+        function resize() {
+            canvas.width  = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
 
         const COLS = 8, ROWS = 4;
         const keys = {};
         let player, bullets, enemyBullets, enemies;
         let score, lives, gameOver, won;
-        let enemyDir, enemySpeed, shootTimer, frameCount, shootCooldown, level;
+        let enemyDir, enemySpeed, shootTimer, frameCount, shootCooldown;
 
-        const stars = Array.from({length: 120}, () => ({
-            x: Math.random(), y: Math.random(),
+        // Static stars — recalculated in draw() using canvas size
+        const starDefs = Array.from({length: 120}, () => ({
+            fx: Math.random(), fy: Math.random(),
             r: Math.random() * 1.5 + 0.3,
             a: Math.random() * 0.8 + 0.2
         }));
 
         function initGame() {
-            player = { x: canvas.width / 2, y: canvas.height - 110, speed: 5 };
+            const W = canvas.width, H = canvas.height;
+            player = { x: W / 2, y: H - 130, speed: 5 };
             bullets = []; enemyBullets = [];
-            score = 0; lives = 3; level = 1;
+            score = 0; lives = 3;
             gameOver = false; won = false;
             enemyDir = 1; enemySpeed = 0.7;
             shootTimer = 0; frameCount = 0; shootCooldown = 0;
@@ -87,12 +83,13 @@
 
         function initEnemies() {
             enemies = [];
-            const mx = 40;
-            const sx = (canvas.width - mx * 2) / (COLS - 1);
-            const sy = canvas.height * 0.12;
+            const W = canvas.width, H = canvas.height;
+            const marginX = 40;
+            const spacingX = (W - marginX * 2) / (COLS - 1);
+            const startY = H * 0.14;
             for (let r = 0; r < ROWS; r++)
                 for (let c = 0; c < COLS; c++)
-                    enemies.push({ x: mx + c * sx, y: sy + r * 52, alive: true, frame: 0 });
+                    enemies.push({ x: marginX + c * spacingX, y: startY + r * 52, alive: true, frame: 0 });
         }
 
         function drawBottle(x, y, frame) {
@@ -114,7 +111,7 @@
             ctx.fillStyle = '#00ccff';
             ctx.beginPath();
             ctx.moveTo(0, -22); ctx.lineTo(18, 10); ctx.lineTo(8, 4);
-            ctx.lineTo(0, 8); ctx.lineTo(-8, 4); ctx.lineTo(-18, 10);
+            ctx.lineTo(0, 8);   ctx.lineTo(-8, 4);  ctx.lineTo(-18, 10);
             ctx.closePath(); ctx.fill();
             ctx.fillStyle = '#ff7700';
             ctx.beginPath(); ctx.ellipse(0, 10, 4, 7, 0, 0, Math.PI * 2); ctx.fill();
@@ -125,12 +122,14 @@
             frameCount++;
             if (gameOver || won) return;
 
-            if ((keys['ArrowLeft']  || keys['a'] || keys['touchLeft'])  && player.x > 20)                 player.x -= player.speed;
-            if ((keys['ArrowRight'] || keys['d'] || keys['touchRight']) && player.x < canvas.width - 20)  player.x += player.speed;
+            const W = canvas.width;
+
+            if ((keys['ArrowLeft']  || keys['a'] || keys['touchLeft'])  && player.x > 22)      player.x -= player.speed;
+            if ((keys['ArrowRight'] || keys['d'] || keys['touchRight']) && player.x < W - 22)  player.x += player.speed;
 
             if (shootCooldown > 0) shootCooldown--;
             if ((keys[' '] || keys['touchFire']) && shootCooldown === 0) {
-                bullets.push({ x: player.x, y: player.y - 24 });
+                bullets.push({ x: player.x, y: player.y - 26 });
                 shootCooldown = 18;
             }
 
@@ -148,10 +147,10 @@
             enemies.forEach(e => { if (e.alive) e.x += enemyDir * enemySpeed; });
             if (frameCount % 20 === 0) enemies.forEach(e => { if (e.alive) e.frame++; });
 
-            if (rx > canvas.width - 30 || lx < 30) {
+            if (rx > W - 30 || lx < 30) {
                 enemyDir *= -1;
                 enemies.forEach(e => { if (e.alive) e.y += 20; });
-                enemySpeed += 0.08;
+                enemySpeed += 0.07;
             }
 
             shootTimer++;
@@ -169,7 +168,7 @@
 
             enemyBullets.forEach(b => {
                 if (Math.abs(b.x - player.x) < 14 && Math.abs(b.y - player.y) < 14) {
-                    lives--; b.y = canvas.height + 100; player.x = canvas.width / 2;
+                    lives--; b.y = canvas.height + 100; player.x = W / 2;
                     if (lives <= 0) gameOver = true;
                 }
             });
@@ -178,25 +177,27 @@
         }
 
         function draw() {
+            const W = canvas.width, H = canvas.height;
             ctx.fillStyle = '#090a0f';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            stars.forEach(s => {
+            ctx.fillRect(0, 0, W, H);
+
+            starDefs.forEach(s => {
                 ctx.fillStyle = `rgba(255,255,255,${s.a})`;
-                ctx.beginPath(); ctx.arc(s.x * canvas.width, s.y * canvas.height, s.r, 0, Math.PI * 2); ctx.fill();
+                ctx.beginPath(); ctx.arc(s.fx * W, s.fy * H, s.r, 0, Math.PI * 2); ctx.fill();
             });
 
             if (gameOver || won) {
                 ctx.textAlign = 'center';
-                const big = Math.min(canvas.width * 0.1, 46);
+                const big = Math.min(W * 0.1, 46);
                 ctx.font = `bold ${big}px Arial`;
                 ctx.fillStyle = gameOver ? '#ff4444' : '#ffcc00';
-                ctx.fillText(gameOver ? 'GAME OVER' : 'YOU WIN! 🍺', canvas.width / 2, canvas.height / 2 - 30);
+                ctx.fillText(gameOver ? 'GAME OVER' : 'YOU WIN! 🍺', W / 2, H / 2 - 30);
                 ctx.fillStyle = 'white';
-                ctx.font = `${Math.min(canvas.width * 0.06, 26)}px Arial`;
-                ctx.fillText(`Score: ${score}`, canvas.width / 2, canvas.height / 2 + 20);
+                ctx.font = `${Math.min(W * 0.06, 26)}px Arial`;
+                ctx.fillText(`Score: ${score}`, W / 2, H / 2 + 20);
                 ctx.fillStyle = '#aaa';
-                ctx.font = `${Math.min(canvas.width * 0.045, 20)}px Arial`;
-                ctx.fillText('Нажми чтобы сыграть снова', canvas.width / 2, canvas.height / 2 + 60);
+                ctx.font = `${Math.min(W * 0.045, 20)}px Arial`;
+                ctx.fillText('Нажми чтобы сыграть снова', W / 2, H / 2 + 60);
                 return;
             }
 
@@ -208,23 +209,22 @@
             ctx.fillStyle = '#ff5500';
             enemyBullets.forEach(b => ctx.fillRect(b.x - 2, b.y, 4, 12));
 
-            const topY = 44;
-            ctx.font = `bold 18px Arial`; ctx.fillStyle = 'white';
-            ctx.textAlign = 'left';  ctx.fillText(`Score: ${score}`, 20, topY);
+            ctx.font = 'bold 18px Arial'; ctx.fillStyle = 'white';
+            ctx.textAlign = 'left';   ctx.fillText(`Score: ${score}`, 20, 44);
             ctx.textAlign = 'center'; ctx.fillStyle = '#ffdd00';
             ctx.font = 'bold 20px Arial';
-            ctx.fillText('BEER INVADERS', canvas.width / 2, topY);
-            ctx.textAlign = 'right'; ctx.fillStyle = 'white'; ctx.font = 'bold 18px Arial';
-            ctx.fillText('❤️ '.repeat(lives).trim(), canvas.width - 20, topY);
+            ctx.fillText('BEER INVADERS', W / 2, 44);
+            ctx.textAlign = 'right';  ctx.fillStyle = 'white';
+            ctx.font = 'bold 18px Arial';
+            ctx.fillText('❤️ '.repeat(lives).trim(), W - 20, 44);
         }
 
         function loop() { update(); draw(); requestAnimationFrame(loop); }
 
-        // Touch zones — hold to move, tap fire button to shoot
         function zone(el, key) {
-            el.addEventListener('touchstart', e => { e.preventDefault(); keys[key] = true; },  { passive: false });
-            el.addEventListener('touchend',   e => { e.preventDefault(); keys[key] = false; }, { passive: false });
-            el.addEventListener('touchcancel',e => { e.preventDefault(); keys[key] = false; }, { passive: false });
+            el.addEventListener('touchstart',  e => { e.preventDefault(); keys[key] = true;  }, { passive: false });
+            el.addEventListener('touchend',    e => { e.preventDefault(); keys[key] = false; }, { passive: false });
+            el.addEventListener('touchcancel', e => { e.preventDefault(); keys[key] = false; }, { passive: false });
         }
         zone(document.getElementById('touch-left'),  'touchLeft');
         zone(document.getElementById('touch-right'), 'touchRight');
@@ -236,8 +236,14 @@
         canvas.addEventListener('touchend', () => { if (gameOver || won) initGame(); });
         canvas.addEventListener('click',    () => { if (gameOver || won) initGame(); });
 
-        initGame();
-        loop();
+        window.addEventListener('resize', () => { resize(); if (gameOver || won || !player) initGame(); });
+
+        // Wait for layout before starting so canvas dimensions are correct
+        window.addEventListener('load', () => {
+            resize();
+            initGame();
+            loop();
+        });
     </script>
 </body>
 </html>

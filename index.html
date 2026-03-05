@@ -41,7 +41,7 @@ function H() { return canvas.height; }
 function startGame() {
     player   = { x: W() / 2, y: H() - 120, spd: 5 };
     bullets  = []; eBullets = []; frame = 0; cooldown = 0;
-    score = 0; lives = 3; dir = 1; speed = 0.8; eTimer = 0;
+    score = 0; lives = 3; dir = 1; speed = 0.27; eTimer = 0;
     spawnEnemies();
     state = 'playing';
 }
@@ -113,7 +113,7 @@ function update() {
     if (cooldown > 0) cooldown--;
     if (shoot && cooldown === 0) {
         bullets.push({ x: player.x, y: player.y - 28 });
-        cooldown = 16;
+        cooldown = 10;
     }
 
     // Player bullets
@@ -136,15 +136,15 @@ function update() {
     if (rx > W() - 28 || lx < 28) {
         dir *= -1;
         enemies.forEach(e => { if (e.alive) e.y += 22; });
-        speed += 0.06;
+        speed += 0.02;
     }
 
     // Enemy shoot
     eTimer++;
-    if (eTimer >= Math.max(28, 90 - alive.length * 2)) {
+    if (eTimer >= Math.max(80, 240 - alive.length * 4)) {
         eTimer = 0;
         const s = alive[Math.floor(Math.random() * alive.length)];
-        eBullets.push({ x: s.x, y: s.y + 20, vy: 4 });
+        eBullets.push({ x: s.x, y: s.y + 20, vy: 1.5 });
     }
 
     // Bullet hits

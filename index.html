@@ -276,10 +276,30 @@ function draw() {
     if (state === 'title') {
         const cy = h * 0.32;
         ctx.textAlign = 'center';
-        ctx.fillStyle = '#ffdd00';
-        ctx.font = `bold ${Math.min(w * 0.12, 52)}px Arial`;
-        ctx.fillText('BEER', w / 2, cy);
-        ctx.fillText('INVADERS', w / 2, cy + Math.min(w * 0.14, 62));
+        const sz1 = Math.min(w * 0.12, 52);
+        const sz2 = Math.min(w * 0.14, 62);
+        const y1  = cy;
+        const y2  = cy + sz2;
+
+        // 3D extrusion: draw shadow layers offset down-right
+        function draw3DText(text, x, y, fontSize) {
+            ctx.font = `bold ${fontSize}px Arial`;
+            const depth = Math.round(fontSize * 0.22);
+            for (let i = depth; i >= 1; i--) {
+                const t = i / depth;
+                ctx.fillStyle = `rgb(${Math.round(120 * t)},${Math.round(80 * t)},0)`;
+                ctx.fillText(text, x + i, y + i);
+            }
+            // top face
+            ctx.fillStyle = '#ffdd00';
+            ctx.fillText(text, x, y);
+            // highlight
+            ctx.fillStyle = 'rgba(255,255,255,0.28)';
+            ctx.fillText(text, x, y);
+        }
+
+        draw3DText('BEER',     w / 2, y1, sz1);
+        draw3DText('INVADERS', w / 2, y2, sz1);
 
         const by = cy + Math.min(w * 0.14, 62) + 68;
         drawBottle(w / 2 - 60, by, 0);

@@ -380,8 +380,17 @@ function draw() {
         ctx.fillText(`Всего: ${totalScore + levelScore}`, px, py + 50);
 
         const isLast = currentLevel >= LEVELS.length - 1;
-        ctx.fillStyle = '#fff'; ctx.font = `${Math.min(w*.05,20)}px Arial`;
-        ctx.fillText(isLast ? 'Нажми — финальный экран' : 'Следующий уровень', px, py + 100);
+        const btnLabel = isLast ? 'Финальный экран' : 'Следующий уровень';
+        const btnY = py + 95;
+        const btnW = Math.min(w*0.62, 260), btnH = 46;
+        // button bg
+        ctx.fillStyle = '#e6b800';
+        ctx.beginPath(); ctx.roundRect(px-btnW/2, btnY-btnH/2, btnW, btnH, btnH/2); ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,0.18)';
+        ctx.beginPath(); ctx.roundRect(px-btnW/2, btnY-btnH/2, btnW, btnH/2, [btnH/2,btnH/2,0,0]); ctx.fill();
+        // button text
+        ctx.fillStyle = '#1a0f00'; ctx.font = `bold ${Math.min(w*.05,19)}px Arial`;
+        ctx.fillText(btnLabel, px, btnY + 7);
         return;
     }
 

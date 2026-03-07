@@ -142,6 +142,28 @@ function recalcHeld() {
     for (const side of touches.values()) held[side] = true;
 }
 
+// ── gamepad ───────────────────────────────────────────────────────────────
+const gp = { left: false, right: false };
+let gpPrevA = false;
+
+function pollGamepad() {
+    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+    let pad = null;
+    for (let i = 0; i < pads.length; i++) { if (pads[i]) { pad = pads[i]; break; } }
+    if (!pad) { gp.left = false; gp.right = false; gpPrevA = false; return; }
+    const axisX = pad.axes[0] || 0;
+    gp.left  = axisX < -0.3 || !!(pad.buttons[14]?.pressed);
+    gp.right = axisX >  0.3 || !!(pad.buttons[15]?.pressed);
+    const aPressed = !!(pad.buttons[0]?.pressed);
+    if (aPressed && !gpPrevA) {
+        if      (state === 'title')      { totalScore = 0; currentLevel = 0; goToStage(); }
+        else if (state === 'dead')       { state = 'title'; }
+        else if (state === 'won')        { state = 'title'; }
+        else if (state === 'levelclear') { advanceLevel(); }
+    }
+    gpPrevA = aPressed;
+}
+
 function advanceLevel() {
     totalScore += score;
     if (currentLevel >= LEVELS.length - 1) {
@@ -164,7 +186,7 @@ function spawnExplosion(x, y) {
 // ── update ───────────────────────────────────────────────────────────────────
 function update() {
     if (state === 'title' || state === 'dead' || state === 'won' || state === 'levelclear') {
-        updateWarp(); return;
+        pollGamepad(); updateWarp(); return;
     }
     if (state === 'stage') {
         updateWarp();
@@ -175,8 +197,9 @@ function update() {
     if (state !== 'playing') return;
     frame++;
 
-    const moveL = held.left  || keys['ArrowLeft']  || keys['a'];
-    const moveR = held.right || keys['ArrowRight'] || keys['d'];
+    pollGamepad();
+    const moveL = held.left  || keys['ArrowLeft']  || keys['a'] || gp.left;
+    const moveR = held.right || keys['ArrowRight'] || keys['d'] || gp.right;
     if (moveL && player.x > 22)       player.x -= player.spd;
     if (moveR && player.x < W() - 22) player.x += player.spd;
 

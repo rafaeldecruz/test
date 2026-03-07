@@ -111,6 +111,7 @@ const touches = new Map();
 
 canvas.addEventListener('pointerdown', e => {
     e.preventDefault();
+    if (state === 'gpdiag') { if (diagStep >= DIAG_LABELS.length) { state = 'title'; } return; }
     if (state === 'title')      { totalScore = 0; currentLevel = 0; goToStage(); return; }
     if (state === 'stage')      { return; } // wait for timer
     if (state === 'dead')       { state = 'title'; return; }
@@ -145,16 +146,30 @@ function recalcHeld() {
 // ── gamepad ───────────────────────────────────────────────────────────────
 const gp = { left: false, right: false };
 let gpPrevA = false;
+let gpConnected = false;
+window.addEventListener('gamepadconnected',    () => { gpConnected = true; });
+window.addEventListener('gamepaddisconnected', () => { gpConnected = false; });
+
+// Настраиваемый маппинг (меняется через диагностику)
+const gpMap = { left: 14, right: 15, action: 0, axisX: 0 };
 
 function pollGamepad() {
     const pads = navigator.getGamepads ? navigator.getGamepads() : [];
     let pad = null;
     for (let i = 0; i < pads.length; i++) { if (pads[i]) { pad = pads[i]; break; } }
     if (!pad) { gp.left = false; gp.right = false; gpPrevA = false; return; }
-    const axisX = pad.axes[0] || 0;
-    gp.left  = axisX < -0.3 || !!(pad.buttons[14]?.pressed);
-    gp.right = axisX >  0.3 || !!(pad.buttons[15]?.pressed);
-    const aPressed = !!(pad.buttons[0]?.pressed);
+
+    if (state === 'gpdiag') { return; } // диагностика рисует сама
+
+    // Select+Start → войти в диагностику
+    if (pad.buttons[8]?.pressed && pad.buttons[9]?.pressed && state === 'title') {
+        diagStep = 0; diagPrevPressed = []; state = 'gpdiag'; return;
+    }
+
+    const axisX = pad.axes[gpMap.axisX] || 0;
+    gp.left  = axisX < -0.3 || !!(pad.buttons[gpMap.left]?.pressed);
+    gp.right = axisX >  0.3 || !!(pad.buttons[gpMap.right]?.pressed);
+    const aPressed = !!(pad.buttons[gpMap.action]?.pressed);
     if (aPressed && !gpPrevA) {
         if      (state === 'title')      { totalScore = 0; currentLevel = 0; goToStage(); }
         else if (state === 'dead')       { state = 'title'; }
@@ -162,6 +177,85 @@ function pollGamepad() {
         else if (state === 'levelclear') { advanceLevel(); }
     }
     gpPrevA = aPressed;
+}
+
+// ── gamepad diagnostics ───────────────────────────────────────────────────
+let diagStep = 0; // 0=left 1=right 2=action
+const DIAG_LABELS = ['Нажми ВЛЕВО', 'Нажми ВПРАВО', 'Нажми СТАРТ/A'];
+const DIAG_KEYS   = ['left', 'right', 'action'];
+let diagPrevPressed = [];
+
+function drawGpDiag() {
+    const w = W(), h = H();
+    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+    let pad = null;
+    for (let i = 0; i < pads.length; i++) { if (pads[i]) { pad = pads[i]; break; } }
+
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#fff';
+    ctx.font = `bold ${Math.min(w*0.06,24)}px Arial`;
+    ctx.fillText('Настройка контроллера', w/2, h*0.15);
+
+    if (!pad) {
+        ctx.fillStyle = '#ff4466';
+        ctx.font = `${Math.min(w*0.05,20)}px Arial`;
+        ctx.fillText('Контроллер не найден', w/2, h*0.5);
+        ctx.fillStyle = '#aaa';
+        ctx.fillText('Нажми на экран чтобы выйти', w/2, h*0.65);
+        return;
+    }
+
+    // шаги
+    for (let i = 0; i < DIAG_LABELS.length; i++) {
+        const done = i < diagStep;
+        const active = i === diagStep;
+        ctx.fillStyle = done ? '#44ff88' : active ? '#ffe033' : '#555';
+        ctx.font = `${active ? 'bold ' : ''}${Math.min(w*0.055,22)}px Arial`;
+        ctx.fillText((done ? '✓ ' : '') + DIAG_LABELS[i], w/2, h*0.32 + i*h*0.12);
+    }
+
+    if (diagStep < DIAG_LABELS.length) {
+        // найти нажатую кнопку (только новое нажатие)
+        const pressed = [];
+        pad.buttons.forEach((b, i) => { if (b.pressed) pressed.push(i); });
+        // ось тоже
+        let axisBtn = -1;
+        if ((pad.axes[0]||0) < -0.5) axisBtn = 100; // ось влево
+        if ((pad.axes[0]||0) >  0.5) axisBtn = 101; // ось вправо
+
+        const newBtn = pressed.find(i => !diagPrevPressed.includes(i));
+        const newAxis = axisBtn !== -1 && !diagPrevPressed.includes(axisBtn) ? axisBtn : -1;
+        const detected = newBtn !== undefined ? newBtn : (newAxis !== -1 ? newAxis : -1);
+
+        if (detected !== -1) {
+            const key = DIAG_KEYS[diagStep];
+            if (detected >= 100) {
+                // это ось — для left/right используем axisX
+                gpMap[key] = -1; // сигнал: использовать ось
+            } else {
+                gpMap[key] = detected;
+            }
+            diagStep++;
+            if (diagStep >= DIAG_LABELS.length) {
+                // финализируем: если left/right через ось, axis уже 0
+            }
+        }
+        diagPrevPressed = [...pressed];
+        if (axisBtn !== -1) diagPrevPressed.push(axisBtn);
+
+        // инфо о текущих нажатиях
+        ctx.fillStyle = '#888';
+        ctx.font = `${Math.min(w*0.04,15)}px Arial`;
+        const bInfo = pressed.length ? `Кнопки: ${pressed.join(', ')}` : 'Ожидание...';
+        ctx.fillText(bInfo, w/2, h*0.75);
+    } else {
+        ctx.fillStyle = '#44ff88';
+        ctx.font = `bold ${Math.min(w*0.055,22)}px Arial`;
+        ctx.fillText('Готово! Нажми экран', w/2, h*0.75);
+        ctx.fillStyle = '#aaa';
+        ctx.font = `${Math.min(w*0.04,15)}px Arial`;
+        ctx.fillText(`← ${gpMap.left<0?'ось':gpMap.left}  → ${gpMap.right<0?'ось':gpMap.right}  A ${gpMap.action}`, w/2, h*0.87);
+    }
 }
 
 function advanceLevel() {
@@ -185,11 +279,12 @@ function spawnExplosion(x, y) {
 
 // ── update ───────────────────────────────────────────────────────────────────
 function update() {
+    if (state === 'gpdiag') { updateWarp(); return; }
     if (state === 'title' || state === 'dead' || state === 'won' || state === 'levelclear') {
         pollGamepad(); updateWarp(); return;
     }
     if (state === 'stage') {
-        updateWarp();
+        pollGamepad(); updateWarp();
         stageTimer++;
         if (stageTimer >= STAGE_DUR) startLevel();
         return;
@@ -362,8 +457,20 @@ function draw() {
         ctx.fillText('Нажми чтобы начать', w/2, by+72);
         ctx.fillStyle = '#555'; ctx.font = `${Math.min(w*.04,16)}px Arial`;
         ctx.fillText('< удерживай  |  удерживай >', w/2, h*0.91);
+        // gamepad status
+        ctx.fillStyle = gpConnected ? '#44ff88' : '#555';
+        ctx.font = `${Math.min(w*.038,14)}px Arial`;
+        ctx.fillText(gpConnected ? '🎮 Геймпад подключён' : '🎮 Геймпад не найден', w/2, h*0.83);
+        if (gpConnected) {
+            ctx.fillStyle = '#aaa';
+            ctx.font = `${Math.min(w*.032,12)}px Arial`;
+            ctx.fillText('Удержи Select+Start для настройки кнопок', w/2, h*0.875);
+        }
         return;
     }
+
+    // ── Gamepad diagnostics ────────────────────────────────────────────────────
+    if (state === 'gpdiag') { drawGpDiag(); return; }
 
     // ── Stage announce ─────────────────────────────────────────────────────────
     if (state === 'stage') {

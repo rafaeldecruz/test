@@ -66,6 +66,9 @@ let totalScore   = 0;
 const COLS = 8, ROWS = 4;
 let player, bullets, eBullets, enemies, explosions;
 let score, lives, dir, speed, eBulletVy, eTimerBase, eTimer, frame, cooldown;
+let bonuses = []; // падающие бонусы
+let doubleGunTimer = 0; // кол-во фреймов двойного выстрела
+const DOUBLE_GUN_DUR = 600; // 10 секунд @ 60fps
 let levelScore = 0; // score earned this level
 
 // stage-screen vars
@@ -81,7 +84,7 @@ function startLevel() {
     const cfg  = LEVELS[currentLevel];
     player     = { x: W() / 2, y: H() - 195, spd: 5 };
     bullets    = []; eBullets = []; frame = 0; cooldown = 0;
-    explosions = [];
+    explosions = []; bonuses = []; doubleGunTimer = 0;
     score      = 0; lives = 3; dir = 1;
     speed      = cfg.speed;
     eBulletVy  = cfg.eBulletVy;
@@ -298,8 +301,27 @@ function update() {
     if (moveL && player.x > 22)       player.x -= player.spd;
     if (moveR && player.x < W() - 22) player.x += player.spd;
 
+    if (doubleGunTimer > 0) doubleGunTimer--;
+
     if (cooldown > 0) cooldown--;
-    if (cooldown === 0) { bullets.push({ x: player.x, y: player.y - 28 }); cooldown = 10; sfx.shoot(); }
+    if (cooldown === 0) {
+        bullets.push({ x: player.x, y: player.y - 28 });
+        if (doubleGunTimer > 0) bullets.push({ x: player.x + 18, y: player.y - 20 });
+        cooldown = 10; sfx.shoot();
+    }
+
+    // бонус — спавн каждые ~8 секунд случайно
+    if (frame % 500 === 480) bonuses.push({ x: Math.random() * (W() - 60) + 30, y: -20, vy: 2.5 });
+    bonuses.forEach(b => b.y += b.vy);
+    bonuses = bonuses.filter(b => b.y < H() + 30);
+    bonuses = bonuses.filter(b => {
+        if (Math.abs(b.x - player.x) < 26 && Math.abs(b.y - player.y) < 26) {
+            doubleGunTimer = DOUBLE_GUN_DUR;
+            sfx.levelClear();
+            return false;
+        }
+        return true;
+    });
 
     bullets.forEach(b => b.y -= 11);
     bullets = bullets.filter(b => b.y > 0);
@@ -582,6 +604,29 @@ function draw() {
     ctx.fillText(`STAGE ${currentLevel+1}`, w/2, hudY);
     ctx.textAlign = 'right'; ctx.fillStyle = '#ff4466'; ctx.font = 'bold 18px Arial';
     ctx.fillText('♥'.repeat(lives), w-18, hudY);
+
+    // двойная пушка — мигающий индикатор
+    if (doubleGunTimer > 0 && Math.floor(doubleGunTimer / 8) % 2 === 0) {
+        ctx.textAlign = 'center'; ctx.fillStyle = '#00ffcc'; ctx.font = `bold ${Math.min(w*0.04,15)}px Arial`;
+        ctx.fillText('⚡ DOUBLE', w/2, hudY + 22);
+    }
+
+    // отрисовка бонусов
+    bonuses.forEach(b => {
+        const pulse = 0.7 + 0.3 * Math.sin(frame * 0.15);
+        ctx.save();
+        ctx.translate(b.x, b.y);
+        ctx.rotate(frame * 0.05);
+        ctx.fillStyle = `rgba(0,255,200,${pulse})`;
+        ctx.beginPath();
+        for (let i = 0; i < 5; i++) {
+            const a = (i * 4 * Math.PI / 5) - Math.PI / 2;
+            const r = i % 2 === 0 ? 14 : 6;
+            i === 0 ? ctx.moveTo(Math.cos(a)*r, Math.sin(a)*r) : ctx.lineTo(Math.cos(a)*r, Math.sin(a)*r);
+        }
+        ctx.closePath(); ctx.fill();
+        ctx.restore();
+    });
 
     drawRoundBtn(w*0.12, h-52, 45, '<');
     drawRoundBtn(w*0.88, h-52, 45, '>');

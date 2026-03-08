@@ -82,7 +82,7 @@ function goToStage() {
 
 function startLevel() {
     const cfg  = LEVELS[currentLevel];
-    player     = { x: W() / 2, y: H() - 195, spd: 5 };
+    player     = { x: W() / 2, y: H() - 140, spd: 5 };
     bullets    = []; eBullets = []; frame = 0; cooldown = 0;
     explosions = []; bonuses = []; doubleGunTimer = 0;
     score      = 0; lives = 3; dir = 1;
@@ -305,8 +305,12 @@ function update() {
 
     if (cooldown > 0) cooldown--;
     if (cooldown === 0) {
-        bullets.push({ x: player.x, y: player.y - 28 });
-        if (doubleGunTimer > 0) bullets.push({ x: player.x + 18, y: player.y - 20 });
+        if (doubleGunTimer > 0) {
+            bullets.push({ x: player.x - 20, y: player.y - 24 });
+            bullets.push({ x: player.x + 20, y: player.y - 24 });
+        } else {
+            bullets.push({ x: player.x, y: player.y - 28 });
+        }
         cooldown = 10; sfx.shoot();
     }
 
@@ -426,6 +430,15 @@ function drawShip(x, y) {
     ctx.closePath(); ctx.fill();
     ctx.fillStyle = '#ff7700';
     ctx.beginPath(); ctx.ellipse(0,12,5,8,0,0,Math.PI*2); ctx.fill();
+    if (doubleGunTimer > 0) {
+        // вторая пушка справа
+        const glow = Math.floor(doubleGunTimer / 8) % 2 === 0;
+        ctx.fillStyle = glow ? '#00ffcc' : '#00ccaa';
+        // левый ствол
+        ctx.fillRect(-22, -18, 5, 14);
+        // правый ствол
+        ctx.fillRect(17, -18, 5, 14);
+    }
     ctx.restore();
 }
 
